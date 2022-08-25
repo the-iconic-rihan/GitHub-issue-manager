@@ -1,0 +1,61 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgresdb
+  namespace: githubissuemanager
+spec:
+  selector:
+    matchLabels:
+      app: postgresdb
+      service: postgresdb
+  serviceName: postgresdb
+  replicas: 1
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: postgresdb
+        service: postgresdb
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: POSTGRES_PASSWORD
+          image: postgres:alpine
+          name: postgresdb
+          ports:
+            - containerPort: 5432
+          resources: {}
+          volumeMounts:
+            - mountPath: /docker-entrypoint-initdb.d/init-database.sh
+              name: init-database-script
+              subPath: init-database.sh
+            - mountPath: /var/lib/postgresql/data
+              name: githubissuemanager-claim
+      restartPolicy: Always
+      volumes:
+        - name: init-database-script
+          configMap:
+            name: init-database
+            defaultMode: 0777
+        - name: githubissuemanager-claim
+          persistentVolumeClaim:
+            claimName: githubissuemanager-claim
+
