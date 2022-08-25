@@ -1,0 +1,29 @@
+---
+apiVersion: v1
+data:
+  init-database.sh: |
+    #!/bin/sh
+
+    set -e
+
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --password "$POSTGRES_PASSWORD" --dbname "$POSTGRES_DB" <<-EOSQL
+        CREATE DATABASE ${POSTGRES_DB};
+        GRANT ALL PRIVILEGES ON DATABASE ${POSTGRES_DB} TO ${POSTGRES_USER};
+    EOSQL
+
+    echo
+    echo 'PostgreSQL initialzing Data...'
+    echo
+
+    pg_ctl -o "-c" -D "$PGDATA" -w restart
+
+    echo Server restarted with TCP/IP enabled
+
+    sem-apply --url postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@postgresdb/$POSTGRES_DB
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: init-database
+  namespace: githubissuemanager
+  resourceVersion: "7888"
+  uid: 2b93d391-0ffd-4228-a9a4-534017f5bef2
