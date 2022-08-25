@@ -1,0 +1,16 @@
+[package]
+name = "middleware"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+reqwest = { version = "0.11.10", features = ["json"] }
+serde = { version = "1.0.137", features = ["derive"] }
+graphql_client = "0.10.0"
+chrono = { version = "0.4.19", features = ["serde"] }
+log = "0.4.17"
+env_logger = "0.9.0"
+sqlx = { version = "0.5", features = ["runtime-tokio-native-tls", "postgres", "time", "chrono", "offline"] }
+tokio = { version = "1", features = ["full"] }
