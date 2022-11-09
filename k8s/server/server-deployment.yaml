@@ -1,0 +1,89 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: server
+    service: server
+  name: server
+  namespace: githubissuemanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: server
+      service: server
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        network-client-side: "true"
+        network-server-side: "true"
+        app: server
+        service: server
+    spec:
+      containers:
+        - env:
+            - name: USER_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: USER_ACCESS_TOKEN
+            - name: COMMANDER_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: COMMANDER_ACCESS_TOKEN
+            - name: ADMIN_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: ADMIN_ACCESS_TOKEN
+            - name: GITHUB_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: GITHUB_ACCESS_TOKEN
+            - name: GRAPHQL_URL
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: GRAPHQL_URL
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: POSTGRES_PASSWORD
+            - name: RUST_LOG
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: RUST_LOG
+          image: githubissuemanager/server
+          imagePullPolicy: Never
+          name: server
+          ports:
+            - containerPort: 8080
+          resources: {}
+          volumeMounts:
+            - mountPath: /app/target
+              name: githubissuemanager-claim
+      restartPolicy: Always
+      volumes:
+        - name: githubissuemanager-claim
+          persistentVolumeClaim:
+            claimName: githubissuemanager-claim
+status: {}

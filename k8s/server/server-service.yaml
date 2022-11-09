@@ -1,0 +1,18 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    app: server
+    service: server
+  name: server
+  namespace: githubissuemanager
+spec:
+  type: ClusterIP
+  ports:
+    - name: "8080"
+      port: 8080
+  selector:
+    app: server
+    service: server
