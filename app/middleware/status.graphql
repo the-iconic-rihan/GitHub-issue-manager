@@ -1,0 +1,16 @@
+query IssueStatus($id: ID!) {
+  rateLimit {
+    __typename
+    limit
+    cost
+    remaining
+    resetAt
+  }
+  node(id: $id) {
+    __typename
+    ... on Issue {
+      __typename
+      state
+    }
+  }
+}

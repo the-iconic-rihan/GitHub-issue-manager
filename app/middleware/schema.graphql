@@ -10243,7 +10243,7 @@ type Enterprise implements Node {
   ): URI!
 
   """
-  Enterprise billing information visible to enterprise billing managers.
+  Enterprise billing information visible to enterprise billing managers.
   """
   billingInfo: EnterpriseBillingInfo
 
