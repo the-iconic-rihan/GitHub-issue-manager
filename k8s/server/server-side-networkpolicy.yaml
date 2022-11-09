@@ -1,0 +1,35 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  creationTimestamp: null
+  name: server-side
+  namespace: githubissuemanager
+spec:
+  podSelector:
+    matchLabels:
+      app: server
+      service: server
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              namespace: githubissuemanager
+        - podSelector:
+            matchLabels:
+              network-server-side: "true"
+      ports:
+        - protocol: TCP
+          port: 8080
+          port: 3000
+          port: 5432
+  egress:
+    - to:
+      ports:
+        - protocol: TCP
+          port: 8080
+          port: 3000
+          port: 5432
