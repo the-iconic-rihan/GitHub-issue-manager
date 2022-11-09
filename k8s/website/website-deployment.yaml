@@ -1,0 +1,45 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: website
+    service: website
+  name: website
+  namespace: githubissuemanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: website
+      service: website
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: website
+        service: website
+        network-client-side: "true"
+    spec:
+      containers:
+        - env:
+            - name: HOST
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: HOST
+            - name: PORT
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: PORT
+          image: githubissuemanager/website
+          imagePullPolicy: Never
+          name: website
+          ports:
+            - containerPort: 3000
+          resources: {}
+      restartPolicy: Always
+status: {}
