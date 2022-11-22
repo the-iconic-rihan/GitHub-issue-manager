@@ -220,3 +220,5 @@ minikube service list
     | kube-system        | kube-dns   | No node port |                             |
     |--------------------+------------+--------------+-----------------------------|
 
+
+#made something
