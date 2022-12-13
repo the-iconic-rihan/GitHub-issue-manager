@@ -2,9 +2,13 @@ import React from "react";
 import Head from "next/head";
 import { FaGithub, FaGoogle, FaLinkedinIn } from "react-icons/fa";
 import Image from "next/image";
-import { useSession, signIn, signOut } from "next-auth/react";
+import { signIn, signOut } from "next-auth/react";
+import Link from "next/link";
 
 function Login({ title }) {
+  async function handleGoogleSignin() {
+    signIn("google", { callbackUrl: "http://localhost:3000/" });
+  }
   return (
     <>
       <Head>
@@ -25,11 +29,11 @@ function Login({ title }) {
                 <h2 className="text-3xl font-bold text-black mb-3">Sign in</h2>
                 <div className="border-2 w-10 bg-sky-500 rounded-xl border-sky-500 inline-block mb-3"></div>
                 {/* social media login */}
-                <div className="flex justify-center my-3 flex-col ">
+                <div className="flex justify-center items-center my-3 flex-col ">
                   {/* github authentication */}
                   <a
                     href="http://"
-                    className="border-2 border-gray-200 p-3 m-2 rounded-full  flex justify-center items-center"
+                    className="border-2 border-gray-200 w-64 p-3 m-2 rounded-full  flex justify-center items-center"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -43,9 +47,10 @@ function Login({ title }) {
                   {/* google Authentication */}
                   <a
                     href="http://"
-                    className="border-2 border-gray-200 rounded-full p-3  flex justify-center  m-2  items-stretch"
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={handleGoogleSignin}
+                    className="border-2 border-gray-200 w-64  rounded-full p-3  flex justify-center  m-2  items-stretch"
                   >
                     <span className="mx-2">Sign In with Google </span>
                     <Image
@@ -56,7 +61,7 @@ function Login({ title }) {
                   </a>
                   <a
                     href="http://"
-                    className="border-2 border-gray-200 rounded-full p-3  flex justify-center m-2 items-stretch "
+                    className="border-2 border-gray-200 w-64 rounded-full p-3  flex justify-center m-2 items-stretch "
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -109,14 +114,14 @@ function Login({ title }) {
                         />
                         Remember me
                       </label>
-                      <a
+                      <Link
                         className="text-xs"
                         href="http://"
                         target="_blank"
                         rel="noopener noreferrer"
                       >
                         Forgot Password?
-                      </a>
+                      </Link>
                     </div>
                     <button className="font-semibold border-2 bg-sky-400 hover:border-sky-600 hover:bg-sky-200 group-hover: hover:transition rounded-xl w-64 p-3 m-4">
                       Sign in
