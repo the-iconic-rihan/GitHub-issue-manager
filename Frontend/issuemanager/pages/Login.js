@@ -1,13 +1,22 @@
 import React from "react";
 import Head from "next/head";
-import { FaGithub, FaGoogle, FaLinkedinIn } from "react-icons/fa";
+// import { FaGithub, FaGoogle, FaLinkedinIn } from "react-icons/fa";
 import Image from "next/image";
 import { signIn, signOut } from "next-auth/react";
+import { useState } from "react";
 import Link from "next/link";
 
 function Login({ title }) {
+  const { data: session } = useSession();
+
+  // Google Handler function
   async function handleGoogleSignin() {
-    signIn("google", { callbackUrl: "http://localhost:3000/" });
+    signIn("google", { callbackUrl: "http://localhost:3000" });
+  }
+
+  // Github Login
+  async function handleGithubSignin() {
+    signIn("github", { callbackUrl: "http://localhost:3000" });
   }
   return (
     <>
@@ -36,6 +45,7 @@ function Login({ title }) {
                     className="border-2 border-gray-200 w-64 p-3 m-2 rounded-full  flex justify-center items-center"
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={handleGithubSignin}
                   >
                     <span className="mx-2">Sign In with Github</span>
                     <Image
@@ -48,8 +58,8 @@ function Login({ title }) {
                   <a
                     href="http://"
                     target="_blank"
-                    rel="noopener noreferrer"
                     onClick={handleGoogleSignin}
+                    rel="noopener noreferrer"
                     className="border-2 border-gray-200 w-64  rounded-full p-3  flex justify-center  m-2  items-stretch"
                   >
                     <span className="mx-2">Sign In with Google </span>
@@ -73,61 +83,61 @@ function Login({ title }) {
                     ></Image>
                   </a>
                 </div>
-                <p className="text-gray-400 my-4">or use your email</p>
+                {/* <p className="text-gray-400 my-4">or use your email</p>
                 <form action="">
                   {/* email container */}
-                  <div className="flex flex-col items-center mb-3">
-                    {/* <div
+                <div className="flex flex-col items-center mb-3">
+                  {/* <div
                     className="bg-gray-100  p-2 flex items-center rounded-xl  "
                   > */}
-                    <input
-                      type="email"
-                      name="email"
-                      id="email"
-                      placeholder="Email"
-                      className="m-1 rounded-xl border-none w-64 p-4 disabled  focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500
+                  <input
+                    type="email"
+                    name="email"
+                    id="email"
+                    placeholder="Email"
+                    className="m-1 rounded-xl border-none w-64 p-4 disabled  focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500
                       disabled:bg-slate-50 disabled:text-slate-500 disabled:border-slate-200 disabled:shadow-none
                       invalid:border-pink-500 invalid:text-red-600
                       focus:invalid:border-pink-500 focus:invalid:ring-red-500 border border-slate-300  text-sm shadow-sm placeholder-slate-400 bg-gray-100  outline-none flex-1 "
-                    />
-                    {/* </div> */}
-                  </div>
-                  {/* password container */}
-                  <div className="flex flex-col items-center mb-3">
-                    <input
-                      type="password"
-                      name="password"
-                      id="password"
-                      placeholder="Password"
-                      className="m-1 rounded-xl border-none w-64 p-4 disabled  focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500
+                  />
+                  {/* </div> */}
+                </div>
+                {/* password container */}
+                <div className="flex flex-col items-center mb-3">
+                  <input
+                    type="password"
+                    name="password"
+                    id="password"
+                    placeholder="Password"
+                    className="m-1 rounded-xl border-none w-64 p-4 disabled  focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500
                       disabled:bg-slate-50 disabled:text-slate-500 disabled:border-slate-200 disabled:shadow-none
                       invalid:border-pink-500 invalid:text-red-600 mb-3
                       focus:invalid:border-pink-500 focus:invalid:ring-red-500 border border-slate-300  text-sm shadow-sm placeholder-slate-400 bg-gray-100  outline-none flex-1 "
-                    />
-                    <div className="flex justify-between w-64 mb-1 mt-2">
-                      <label className="flex items center text-xs">
-                        <input
-                          type="checkbox"
-                          name="remember"
-                          id="remember"
-                          className="mr-1"
-                        />
-                        Remember me
-                      </label>
-                      <Link
-                        className="text-xs"
-                        href="http://"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Forgot Password?
-                      </Link>
-                    </div>
-                    <button className="font-semibold border-2 bg-sky-400 hover:border-sky-600 hover:bg-sky-200 group-hover: hover:transition rounded-xl w-64 p-3 m-4">
-                      Sign in
-                    </button>
+                  />
+                  <div className="flex justify-between w-64 mb-1 mt-2">
+                    <label className="flex items center text-xs">
+                      <input
+                        type="checkbox"
+                        name="remember"
+                        id="remember"
+                        className="mr-1"
+                      />
+                      Remember me
+                    </label>
+                    <Link
+                      className="text-xs"
+                      href="http://"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Forgot Password?
+                    </Link>
                   </div>
-                </form>
+                  <button className="font-semibold border-2 bg-sky-400 hover:border-sky-600 hover:bg-sky-200 group-hover: hover:transition rounded-xl w-64 p-3 m-4">
+                    Sign in
+                  </button>
+                </div>
+                {/* </form> */}
               </div>
             </div>
 

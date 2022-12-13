@@ -1,28 +1,35 @@
-import Login from "./Login";
-import { useSession } from "next-auth/react";
 import Head from "next/head";
-import { getRequestMeta } from "next/dist/server/request-meta";
+import Image from "next/image";
 import Link from "next/link";
+import Login from "./Login";
+import { useState } from "react";
+import { getSession, useSession, signOut } from "next-auth/react";
 
 export default function Home() {
   const { data: session } = useSession();
+
+  function handleSignOut() {
+    signOut();
+  }
+
   return (
-    <>
-      <div className="container">
-        <Head>
-          <title>Home Page</title>
-        </Head>
-        {session ? User({ session, handleSignOut }) : Guest()}
-      </div>
+    <div className="container">
+      <Head>
+        <title>Home Page</title>
+      </Head>
       <Login title="GitCore | Login Page"></Login>
-    </>
+
+      {session ? User({ session, handleSignOut }) : Guest()}
+    </div>
   );
 }
-/// Guest
+
+// Guest
 function Guest() {
   return (
     <main className="container mx-auto text-center py-20">
       <h3 className="text-4xl font-bold">Guest Homepage</h3>
+
       <div className="flex justify-center">
         <Link href={"/login"}>
           <a className="mt-5 px-10 py-1 rounded-sm bg-indigo-500 text-gray-50">
@@ -35,7 +42,7 @@ function Guest() {
 }
 
 // Authorize User
-function User({ session, handleSignOut }:any) {
+function User({ session, handleSignOut }: any) {
   return (
     <main className="container mx-auto text-center py-20">
       <h3 className="text-4xl font-bold">Authorize User Homepage</h3>
@@ -48,7 +55,7 @@ function User({ session, handleSignOut }:any) {
       <div className="flex justify-center">
         <button
           onClick={handleSignOut}
-          className="mt-5 px-10 py-1 rounded-sm bg-indigo-500 bg-gray-50"
+          className="mt-5 px-10 py-1 rounded-sm bg-indigo-500"
         >
           Sign Out
         </button>
@@ -63,4 +70,21 @@ function User({ session, handleSignOut }:any) {
       </div>
     </main>
   );
+}
+
+export async function getServerSideProps({ req }: any) {
+  const session = await getSession({ req });
+
+  if (!session) {
+    return {
+      redirect: {
+        destination: "/login",
+        permanent: false,
+      },
+    };
+  }
+
+  return {
+    props: { session },
+  };
 }
