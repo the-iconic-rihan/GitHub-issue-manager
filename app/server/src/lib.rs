@@ -14,8 +14,8 @@ pub mod validate;
 
 use actix_web::{
     body::MessageBody,
-    dev::{ServiceFactory, ServiceRequest, ServiceResponse},
-    http::header,
+    dev::{Service, ServiceFactory, ServiceRequest, ServiceResponse},
+    http::{header, StatusCode},
     middleware::{DefaultHeaders, Logger},
     web, App, Error,
 };
@@ -36,6 +36,22 @@ pub fn build_app(
 > {
     App::new()
         .app_data(state)
+        // A 401 means GitHub rejected the token (revoked/expired): forget its cached
+        // validation immediately so it is not accepted again for the rest of the TTL.
+        .wrap_fn(|req, srv| {
+            let token = auth::bearer_token(req.request()).ok();
+            let state = req.app_data::<web::Data<AppState>>().cloned();
+            let response = srv.call(req);
+            async move {
+                let response = response.await?;
+                if response.status() == StatusCode::UNAUTHORIZED {
+                    if let (Some(token), Some(state)) = (token, state) {
+                        state.auth_cache.invalidate(&token);
+                    }
+                }
+                Ok(response)
+            }
+        })
         .wrap(
             DefaultHeaders::new()
                 .add((header::X_CONTENT_TYPE_OPTIONS, "nosniff"))

@@ -2,10 +2,11 @@ import Link from "next/link";
 
 import Layout from "@/components/Layout";
 import TrackControls from "@/components/TrackControls";
-import { EmptyState, ErrorMessage, LabelBadge, LoadingBlock, PageHeader, StateBadge } from "@/components/ui";
+import { EmptyState, ErrorMessage, LabelBadge, LoadingBlock, Notice, PageHeader, Spinner, StateBadge } from "@/components/ui";
 import { relativeTime, splitFullName } from "@/lib/format";
 import type { Dashboard as DashboardData } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
+import { useAutoSync } from "@/lib/useAutoSync";
 
 function Stat({ label, value, hint }: { label: string; value: number; hint?: string }) {
   return (
@@ -19,12 +20,20 @@ function Stat({ label, value, hint }: { label: string; value: number; hint?: str
 
 export default function Dashboard() {
   const { data, error, loading, reload } = useApi<DashboardData>("dashboard");
+  const hasTracked = (data?.totals.tracked_repositories ?? 0) > 0;
+  // Refresh stale repository snapshots in the background while the dashboard is open.
+  const autoSync = useAutoSync(reload, hasTracked);
 
   return (
     <Layout title="Dashboard">
       <PageHeader
         title="Dashboard"
-        subtitle="Statistics for your tracked repositories, from their most recent sync."
+        subtitle={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            Statistics for your tracked repositories, refreshed automatically while this page is open.
+            {autoSync.refreshing ? <Spinner label="Refreshing" /> : null}
+          </span>
+        }
         actions={
           <Link href="/repos" className="btn-primary">
             Track repositories
@@ -33,6 +42,15 @@ export default function Dashboard() {
       />
 
       {error ? <ErrorMessage error={error} onRetry={reload} /> : null}
+      {autoSync.failures.length > 0 || autoSync.error ? (
+        <div className="mb-4">
+          <Notice kind="info">
+            {autoSync.error
+              ? `Automatic refresh failed: ${autoSync.error}`
+              : `Could not refresh ${autoSync.failures.map((f) => `${f.full_name} (${f.message})`).join("; ")}. Showing the last synced data.`}
+          </Notice>
+        </div>
+      ) : null}
       {loading && !data ? <LoadingBlock label="Loading dashboard" /> : null}
 
       {data && data.totals.tracked_repositories === 0 ? (

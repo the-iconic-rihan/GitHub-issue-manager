@@ -10,13 +10,14 @@ use std::{
     collections::HashMap,
     future::Future,
     pin::Pin,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
 use actix_web::{dev::Payload, http::header, web, FromRequest, HttpRequest};
-use middleware::github::models::User;
+use middleware::github::{models::User, GitHubError};
 use sha2::{Digest, Sha256};
+use tokio::sync::OnceCell;
 
 use crate::{error::ApiError, state::AppState};
 
@@ -29,10 +30,16 @@ fn token_key(token: &str) -> TokenKey {
     Sha256::digest(token.as_bytes()).into()
 }
 
+type Validation = Arc<OnceCell<Result<User, GitHubError>>>;
+
 /// In-memory cache of validated tokens, keyed by the token's SHA-256 digest.
+///
+/// Concurrent validations of the same token are coalesced into one GitHub request
+/// (a page load fires several API calls at once; without this each would hit `GET /user`).
 pub struct AuthCache {
     ttl: Duration,
     entries: Mutex<HashMap<TokenKey, (User, Instant)>>,
+    in_flight: Mutex<HashMap<TokenKey, Validation>>,
 }
 
 impl AuthCache {
@@ -40,7 +47,37 @@ impl AuthCache {
         Self {
             ttl,
             entries: Mutex::new(HashMap::new()),
+            in_flight: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Returns the cached user, or validates the token with `validate`, sharing one
+    /// in-flight validation between concurrent callers. Only successes are cached.
+    pub async fn get_or_validate<F, Fut>(&self, token: &str, validate: F) -> Result<User, GitHubError>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<User, GitHubError>>,
+    {
+        if let Some(user) = self.get(token) {
+            return Ok(user);
+        }
+        let key = token_key(token);
+        let cell = {
+            let mut in_flight = self.in_flight.lock().unwrap_or_else(|p| p.into_inner());
+            in_flight.entry(key).or_default().clone()
+        };
+        let result = cell.get_or_init(validate).await.clone();
+        if let Ok(user) = &result {
+            // Cache before releasing the in-flight slot so late arrivals hit the cache.
+            self.insert(token, user.clone());
+        }
+        {
+            let mut in_flight = self.in_flight.lock().unwrap_or_else(|p| p.into_inner());
+            if in_flight.get(&key).is_some_and(|c| Arc::ptr_eq(c, &cell)) {
+                in_flight.remove(&key);
+            }
+        }
+        result
     }
 
     pub fn get(&self, token: &str) -> Option<User> {
@@ -76,7 +113,7 @@ impl AuthCache {
 }
 
 /// Extracts the bearer token from the `Authorization` header.
-fn bearer_token(req: &HttpRequest) -> Result<String, ApiError> {
+pub(crate) fn bearer_token(req: &HttpRequest) -> Result<String, ApiError> {
     let value = req
         .headers()
         .get(header::AUTHORIZATION)
@@ -136,11 +173,10 @@ impl FromRequest for AuthUser {
         Box::pin(async move {
             let token = token?;
             let state = state?;
-            if let Some(user) = state.auth_cache.get(&token) {
-                return Ok(AuthUser { user, token });
-            }
-            let user = state.github.authenticated_user(&token).await?;
-            state.auth_cache.insert(&token, user.clone());
+            let user = state
+                .auth_cache
+                .get_or_validate(&token, || state.github.authenticated_user(&token))
+                .await?;
             Ok(AuthUser { user, token })
         })
     }
@@ -216,6 +252,41 @@ mod tests {
         let disabled = AuthCache::new(Duration::ZERO);
         disabled.insert("tok", user(1));
         assert!(disabled.get("tok").is_none());
+    }
+
+    #[tokio::test]
+    async fn concurrent_validations_share_one_request_and_failures_are_not_cached() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let cache = AuthCache::new(Duration::from_secs(60));
+        let calls = AtomicUsize::new(0);
+        let calls = &calls;
+        let ok = move || async move {
+            calls.fetch_add(1, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            Ok(user(7))
+        };
+        let (a, b, c) = tokio::join!(
+            cache.get_or_validate("tok", ok),
+            cache.get_or_validate("tok", ok),
+            cache.get_or_validate("tok", ok)
+        );
+        assert_eq!((a.unwrap().id, b.unwrap().id, c.unwrap().id), (7, 7, 7));
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "one GitHub call for three concurrent requests"
+        );
+        assert_eq!(cache.get_or_validate("tok", ok).await.unwrap().id, 7);
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "served from cache afterwards");
+
+        let failing = move || async move {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Err(GitHubError::Unauthorized)
+        };
+        assert!(cache.get_or_validate("bad", failing).await.is_err());
+        assert!(cache.get_or_validate("bad", failing).await.is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 3, "failures are retried, not cached");
     }
 
     #[test]

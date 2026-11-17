@@ -21,3 +21,6 @@ build
 htmlcov
 
 README.org
+
+# End-to-end test output
+e2e/artifacts/

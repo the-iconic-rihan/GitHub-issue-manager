@@ -139,6 +139,7 @@ async fn main() -> ExitCode {
         github,
         auth_cache: AuthCache::new(config.auth_cache_ttl),
         sync_max_pages: config.sync_max_pages,
+        auto_sync: config.auto_sync,
         discover,
         commander_token: config.commander_token.clone(),
         admin_token: config.admin_token.clone(),

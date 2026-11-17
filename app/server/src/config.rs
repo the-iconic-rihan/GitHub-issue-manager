@@ -25,6 +25,7 @@ pub struct Config {
     pub auth_cache_ttl: Duration,
     /// Upper bound on pages (of 100) fetched by a repository sync.
     pub sync_max_pages: u32,
+    pub auto_sync: crate::state::AutoSync,
     pub discover: Option<DiscoverConfig>,
     pub commander_token: Option<String>,
     pub admin_token: Option<String>,
@@ -148,6 +149,15 @@ impl Config {
             return Err(ConfigError("ISSUE_SYNC_MAX_PAGES must be between 1 and 100".into()));
         }
 
+        let stale_after_secs: i64 = parse("AUTO_SYNC_STALE_SECS", 900)?;
+        if stale_after_secs < 60 {
+            return Err(ConfigError("AUTO_SYNC_STALE_SECS must be at least 60".into()));
+        }
+        let max_repos: u32 = parse("AUTO_SYNC_MAX_REPOS", 10)?;
+        if !(1..=50).contains(&max_repos) {
+            return Err(ConfigError("AUTO_SYNC_MAX_REPOS must be between 1 and 50".into()));
+        }
+
         Ok(Config {
             bind_address: var("BIND_ADDRESS").unwrap_or_else(|| "0.0.0.0:8080".into()),
             database,
@@ -156,6 +166,10 @@ impl Config {
             github_timeout: Duration::from_secs(parse("GITHUB_TIMEOUT_SECS", 15)?),
             auth_cache_ttl: Duration::from_secs(parse("AUTH_CACHE_TTL_SECS", 120)?),
             sync_max_pages,
+            auto_sync: crate::state::AutoSync {
+                stale_after_secs,
+                max_repos,
+            },
             discover,
             commander_token: secret("COMMANDER_ACCESS_TOKEN")?,
             admin_token: secret("ADMIN_ACCESS_TOKEN")?,

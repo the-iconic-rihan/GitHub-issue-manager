@@ -76,6 +76,52 @@ jobs:
           NEXT_TELEMETRY_DISABLED: "1"
       - run: npm audit --omit=dev
 
+  e2e:
+    name: End-to-end (full stack + browser)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gim_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/gim_e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Frontend/issuemanager/package-lock.json
+      - run: npm ci
+        working-directory: Frontend/issuemanager
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r e2e/requirements.txt
+      - name: Run end-to-end suite
+        run: |
+          # Firefox and geckodriver are preinstalled on GitHub's Ubuntu runners.
+          export GECKODRIVER="$(command -v geckodriver || echo "$GECKOWEBDRIVER/geckodriver")"
+          e2e/run.sh
+      - name: Upload logs and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: e2e/artifacts/
+          if-no-files-found: ignore
+
   images:
     name: Docker images
     runs-on: ubuntu-latest

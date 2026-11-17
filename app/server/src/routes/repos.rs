@@ -126,5 +126,12 @@ pub async fn sync(
     path: web::Path<RepoPath>,
 ) -> Result<HttpResponse, ApiError> {
     path.validate()?;
-    Ok(response::ok(services::sync(&state, &user, &path).await?))
+    Ok(response::ok(
+        services::sync(&state, &user, &path, services::SyncMode::Full).await?,
+    ))
+}
+
+/// Conditionally refreshes the user's stale tracked repositories (called by the dashboard).
+pub async fn sync_stale(state: web::Data<AppState>, user: AuthUser) -> Result<HttpResponse, ApiError> {
+    Ok(response::ok(services::sync_stale(&state, &user).await?))
 }

@@ -8,7 +8,7 @@ pub mod params;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::{
-    header::{HeaderMap, ACCEPT, LINK},
+    header::{HeaderMap, ACCEPT, ETAG, IF_NONE_MATCH, LINK},
     Method, RequestBuilder, Response,
 };
 use serde::{de::DeserializeOwned, Serialize};
@@ -76,7 +76,11 @@ impl GitHubClient {
     }
 
     async fn execute(&self, request: RequestBuilder) -> Result<Response, GitHubError> {
-        let response = request.send().await?;
+        Self::check(request.send().await?).await
+    }
+
+    /// Passes successful responses through and classifies failures.
+    async fn check(response: Response) -> Result<Response, GitHubError> {
         let status = response.status();
         if status.is_success() {
             return Ok(response);
@@ -373,38 +377,83 @@ impl GitHubClient {
         Self::decode(response).await
     }
 
-    /// Fetches every issue (open and closed, most recently updated first) for a full sync.
-    /// Returns `truncated = true` when more than `max_pages` pages exist.
-    pub async fn list_all_issues(
+    /// Fetches every issue (open and closed, most recently updated first) for a sync.
+    ///
+    /// With `etag` (from a previous complete snapshot) the first page is requested
+    /// conditionally: any issue change moves that issue to the top of page 1 and changes its
+    /// ETag, so `304 Not Modified` means nothing changed. 304 responses do not count against
+    /// GitHub's rate limit. Returns `truncated = true` when more than `max_pages` pages exist.
+    pub async fn issue_snapshot(
         &self,
         token: &str,
         owner: &str,
         repo: &str,
         max_pages: u32,
-    ) -> Result<(Vec<Issue>, bool), GitHubError> {
+        etag: Option<&str>,
+    ) -> Result<IssueSnapshot, GitHubError> {
         let params = [
             ("state", "all".to_owned()),
             ("sort", "updated".to_owned()),
             ("direction", "desc".to_owned()),
         ];
-        let mut all = Vec::new();
-        for page_number in 1..=max_pages.max(1) {
-            let page: Page<Issue> = self
-                .get_page(
-                    token,
-                    &["repos", owner, repo, "issues"],
-                    &params,
-                    page_number,
-                    MAX_PER_PAGE,
-                )
-                .await?;
-            all.extend(page.items.into_iter().filter(|i| !i.is_pull_request()));
-            if !page.has_next {
-                return Ok((all, false));
-            }
+        let segments = ["repos", owner, repo, "issues"];
+
+        let mut first = self
+            .request(Method::GET, token, &segments)
+            .query(&params)
+            .query(&[("page", 1), ("per_page", MAX_PER_PAGE)]);
+        if let Some(etag) = etag {
+            first = first.header(IF_NONE_MATCH, etag);
         }
-        Ok((all, true))
+        let response = first.send().await?;
+        if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+            return Ok(IssueSnapshot::NotModified);
+        }
+        let response = Self::check(response).await?;
+        let new_etag = response
+            .headers()
+            .get(ETAG)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+        let mut has_next = link_has_next(response.headers());
+        let first_page: Vec<Issue> = Self::decode(response).await?;
+        let mut issues: Vec<Issue> = first_page.into_iter().filter(|i| !i.is_pull_request()).collect();
+
+        let mut page_number = 1;
+        while has_next {
+            if page_number >= max_pages.max(1) {
+                return Ok(IssueSnapshot::Fetched {
+                    issues,
+                    truncated: true,
+                    etag: new_etag,
+                });
+            }
+            page_number += 1;
+            let page: Page<Issue> = self
+                .get_page(token, &segments, &params, page_number, MAX_PER_PAGE)
+                .await?;
+            issues.extend(page.items.into_iter().filter(|i| !i.is_pull_request()));
+            has_next = page.has_next;
+        }
+        Ok(IssueSnapshot::Fetched {
+            issues,
+            truncated: false,
+            etag: new_etag,
+        })
     }
+}
+
+/// Result of [`GitHubClient::issue_snapshot`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum IssueSnapshot {
+    /// The conditional request returned 304: the stored snapshot is current.
+    NotModified,
+    Fetched {
+        issues: Vec<Issue>,
+        truncated: bool,
+        /// ETag of the first page, to make the next sync conditional.
+        etag: Option<String>,
+    },
 }
 
 /// True when the RFC 8288 `Link` header advertises a `rel="next"` page.
@@ -576,7 +625,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_all_issues_follows_pages_and_reports_truncation() {
+    async fn issue_snapshot_follows_pages_and_reports_truncation() {
         let server = MockServer::start().await;
         for p in 1..=3 {
             Mock::given(method("GET"))
@@ -586,15 +635,83 @@ mod tests {
                 .respond_with(
                     ResponseTemplate::new(200)
                         .set_body_json(serde_json::json!([issue_json(p, false)]))
-                        .insert_header("link", r#"<https://x>; rel="next""#),
+                        .insert_header("link", r#"<https://x>; rel="next""#)
+                        .insert_header("etag", format!("W/\"page{p}\"").as_str()),
                 )
                 .mount(&server)
                 .await;
         }
         let client = GitHubClient::new(&server.uri(), Duration::from_secs(5)).unwrap();
-        let (issues, truncated) = client.list_all_issues("tok", "acme", "app", 2).await.unwrap();
-        assert_eq!(issues.len(), 2);
-        assert!(truncated);
+        match client.issue_snapshot("tok", "acme", "app", 2, None).await.unwrap() {
+            IssueSnapshot::Fetched {
+                issues,
+                truncated,
+                etag,
+            } => {
+                assert_eq!(issues.len(), 2);
+                assert!(truncated);
+                assert_eq!(etag.as_deref(), Some("W/\"page1\""), "ETag of the first page");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn issue_snapshot_is_conditional() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/repos/acme/app/issues"))
+            .and(header("if-none-match", "W/\"v1\""))
+            .respond_with(ResponseTemplate::new(304))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/repos/acme/app/issues"))
+            .and(header("if-none-match", "W/\"stale\""))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!([issue_json(1, false), issue_json(2, true)]))
+                    .insert_header("etag", "W/\"v2\""),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/repos/acme/gone/issues"))
+            .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({"message": "Not Found"})))
+            .mount(&server)
+            .await;
+        let client = GitHubClient::new(&server.uri(), Duration::from_secs(5)).unwrap();
+
+        let unchanged = client
+            .issue_snapshot("tok", "acme", "app", 10, Some("W/\"v1\""))
+            .await
+            .unwrap();
+        assert_eq!(unchanged, IssueSnapshot::NotModified);
+
+        match client
+            .issue_snapshot("tok", "acme", "app", 10, Some("W/\"stale\""))
+            .await
+            .unwrap()
+        {
+            IssueSnapshot::Fetched {
+                issues,
+                truncated,
+                etag,
+            } => {
+                assert_eq!(issues.len(), 1, "pull requests are excluded");
+                assert!(!truncated);
+                assert_eq!(etag.as_deref(), Some("W/\"v2\""));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+
+        let err = client
+            .issue_snapshot("tok", "acme", "gone", 10, None)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, GitHubError::NotFound(_)));
     }
 
     #[tokio::test]

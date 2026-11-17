@@ -462,3 +462,148 @@ async fn discover_lists_filters_and_paginates() {
     assert_eq!(status, 401);
     db.drop().await;
 }
+
+async fn age_sync(pool: &sqlx::PgPool, full_name: &str) {
+    sqlx::query("UPDATE tracked_repositories SET last_synced_at = now() - interval '1 day' WHERE full_name = $1")
+        .bind(full_name)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+#[actix_web::test]
+async fn automatic_sync_uses_conditional_requests() {
+    let db = TestDb::new().await;
+    let gh = fake_github().await;
+    mock_repo(&gh, "acme/app", REPO_ID, true).await;
+    // Unconditional listing (manual Sync) returns ETag v1.
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/app/issues"))
+        .and(query_param("state", "all"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!([issue_json(1, "open", &["bug"], &[], "2026-11-14T00:00:00Z")]))
+                .insert_header("etag", "W/\"v1\""),
+        )
+        .with_priority(5)
+        .mount(&gh)
+        .await;
+    // Conditional listing with the stored ETag: unchanged.
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/app/issues"))
+        .and(wiremock::matchers::header("if-none-match", "W/\"v1\""))
+        .respond_with(ResponseTemplate::new(304))
+        .with_priority(1)
+        .mount(&gh)
+        .await;
+    let pool = db.pool().await;
+    let app = init(state(pool.clone(), &gh)).await;
+
+    send(&app, put("/api/v1/tracked-repos/acme/app", TOKEN)).await;
+    let (status, body, _) = send(&app, post("/api/v1/tracked-repos/acme/app/sync", TOKEN)).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["data"]["not_modified"], false);
+
+    // Fresh snapshot: nothing to do.
+    let (status, body, _) = send(&app, post("/api/v1/tracked-repos/sync-stale", TOKEN)).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        body["data"],
+        json!({"updated": [], "unchanged": [], "failed": [], "more_pending": false})
+    );
+
+    // Stale snapshot: a conditional request, answered 304, still refreshes last_synced_at.
+    age_sync(&pool, "acme/app").await;
+    let (status, body, _) = send(&app, post("/api/v1/tracked-repos/sync-stale", TOKEN)).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["data"]["unchanged"], json!(["acme/app"]));
+    let fresh: bool =
+        sqlx::query_scalar("SELECT last_synced_at > now() - interval '1 minute' FROM tracked_repositories")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(fresh);
+    let cached: i64 = sqlx::query_scalar("SELECT count(*) FROM repo_issues")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(cached, 1, "304 keeps the snapshot");
+
+    // The manual Sync button is always a full (unconditional) sync.
+    send(&app, post("/api/v1/tracked-repos/acme/app/sync", TOKEN)).await;
+    let listing_requests: Vec<bool> = gh
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == "/repos/acme/app/issues")
+        .map(|r| r.headers.contains_key("if-none-match"))
+        .collect();
+    assert_eq!(listing_requests, vec![false, true, false]);
+    db.drop().await;
+}
+
+#[actix_web::test]
+async fn sync_stale_skips_fresh_repos_and_continues_after_failures() {
+    let db = TestDb::new().await;
+    let gh = fake_github().await;
+    mock_repo(&gh, "acme/app", REPO_ID, true).await;
+    mock_repo(&gh, "acme/fresh", REPO_ID + 1, true).await;
+    mock_repo(&gh, "acme/broken", REPO_ID + 2, true).await;
+    for name in ["acme/app", "acme/fresh", "acme/broken"] {
+        mock_issue_list(
+            &gh,
+            name,
+            json!([issue_json(1, "open", &[], &[], "2026-11-14T00:00:00Z")]),
+        )
+        .await;
+    }
+    let pool = db.pool().await;
+    let app = init(state(pool.clone(), &gh)).await;
+    for name in ["acme/app", "acme/fresh", "acme/broken"] {
+        assert_eq!(
+            send(&app, put(&format!("/api/v1/tracked-repos/{name}"), TOKEN)).await.0,
+            200
+        );
+        assert_eq!(
+            send(&app, post(&format!("/api/v1/tracked-repos/{name}/sync"), TOKEN))
+                .await
+                .0,
+            200
+        );
+    }
+    age_sync(&pool, "acme/app").await;
+    age_sync(&pool, "acme/broken").await;
+
+    // GitHub now fails for acme/broken.
+    let gh2 = fake_github().await;
+    mock_repo(&gh2, "acme/app", REPO_ID, true).await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/broken"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({"message": "boom"})))
+        .mount(&gh2)
+        .await;
+    mock_issue_list(
+        &gh2,
+        "acme/app",
+        json!([issue_json(2, "open", &[], &[], "2026-11-15T00:00:00Z")]),
+    )
+    .await;
+    let app = init(state(pool.clone(), &gh2)).await;
+
+    let (status, body, _) = send(&app, post("/api/v1/tracked-repos/sync-stale", TOKEN)).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["data"]["updated"], json!(["acme/app"]));
+    assert_eq!(body["data"]["unchanged"], json!([]));
+    assert_eq!(body["data"]["failed"][0]["full_name"], "acme/broken");
+    assert_eq!(body["data"]["failed"][0]["code"], "github_unavailable");
+    assert!(
+        !gh2.received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .any(|r| r.url.path().starts_with("/repos/acme/fresh")),
+        "fresh repositories are not re-synced"
+    );
+    db.drop().await;
+}
