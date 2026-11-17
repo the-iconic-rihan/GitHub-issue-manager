@@ -1,7 +1,19 @@
 .DS_Store
 .idea
+.vscode
 *.log
 tmp/
+
+# Secrets: only *.example files are committed.
+.env
+.env.*
+!.env.example
+
+# Rust
+target/
+
+# Node (each JS project has its own node_modules)
+node_modules/
 
 *.py[cod]
 *.egg

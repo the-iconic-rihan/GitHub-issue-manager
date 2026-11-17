@@ -1,0 +1,24 @@
+---
+# Non-secret configuration. Secrets live in the `githubissuemanager-secret` Secret, created
+# from k8s/githubissuemanager-secret.env.example (see README > Kubernetes deployment).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: githubissuemanager-config
+  namespace: githubissuemanager
+data:
+  # Public URL users open in the browser (must match the GitHub OAuth app callback URL host).
+  NEXTAUTH_URL: "http://githubissuemanager.local"
+  # In-cluster URL of the API server, used by the website's server-side proxy.
+  BACKEND_URL: "http://server:8080"
+  POSTGRES_HOST: "postgresdb"
+  POSTGRES_PORT: "5432"
+  GITHUB_API_URL: "https://api.github.com"
+  GITHUB_WEB_URL: "https://github.com"
+  GRAPHQL_URL: "https://api.github.com/graphql"
+  # Discover aggregator schedule (only used when GITHUB_ACCESS_TOKEN is set). 0 disables it.
+  DISCOVER_SYNC_INTERVAL_SECS: "3600"
+  DISCOVER_SYNC_BATCH: "100"
+  ISSUE_SYNC_MAX_PAGES: "10"
+  RUST_LOG: "info,sqlx=warn"
+  LOG_FORMAT: "json"

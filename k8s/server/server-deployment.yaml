@@ -1,0 +1,109 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: server
+    service: server
+  name: server
+  namespace: githubissuemanager
+spec:
+  # Keep a single replica while the Discover background job is enabled (it runs per replica);
+  # with DISCOVER_SYNC_INTERVAL_SECS=0 the server is stateless and can be scaled out.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: server
+      service: server
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: server
+        service: server
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: server
+          # Build with `docker build -t githubissuemanager/server:latest app/` and push it to a
+          # registry your cluster can pull from (or load it into minikube; see README).
+          image: githubissuemanager/server:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: githubissuemanager-config
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: POSTGRES_PASSWORD
+            - name: GITHUB_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: GITHUB_ACCESS_TOKEN
+                  optional: true
+            - name: COMMANDER_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: COMMANDER_ACCESS_TOKEN
+                  optional: true
+            - name: ADMIN_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: ADMIN_ACCESS_TOKEN
+                  optional: true
+            - name: BIND_ADDRESS
+              value: "0.0.0.0:8080"
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /api/v1/health/live
+              port: http
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health/live
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      restartPolicy: Always

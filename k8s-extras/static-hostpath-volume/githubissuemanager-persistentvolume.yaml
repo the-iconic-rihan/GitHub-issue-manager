@@ -1,0 +1,24 @@
+---
+# Optional: a static hostPath volume for single-node clusters WITHOUT a dynamic storage
+# provisioner (e.g. bare kubeadm). Not applied by `kubectl apply -R -f k8s/`. See README.md here.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: githubissuemanager-pv
+  labels:
+    app: githubissuemanager
+spec:
+  storageClassName: local-storage
+  claimRef:
+    namespace: githubissuemanager
+    name: githubissuemanager-claim
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  # Retain: deleting the claim must never wipe the database files.
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    # Under /data so minikube keeps it across restarts.
+    path: /data/githubissuemanager-postgres/
+    type: DirectoryOrCreate

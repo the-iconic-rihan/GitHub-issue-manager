@@ -1,223 +1,280 @@
-
-# Table of Contents
-
-1.  [Getting Started](#orge319bec)
-    1.  [Create Docker images](#orgd624d66)
-    2.  [Server](#orgfa88653)
-    3.  [Website](#org8bf92b4)
-    4.  [Enable `ingress` addon for `minikube`](#org4571b11)
-    5.  [Setup](#orgc782791)
-        1.  [`gi-cli`](#org513ecb8)
-        2.  [Manual Setup](#orgaf135a2)
-2.  [Data persistence across restarts](#org27ce41a)
-3.  [Reuse Docker daemon from Minikube](#org36108f6)
-4.  [Development](#org0d391eb)
-    1.  [Minikube tunnel](#org7d551c7)
-    2.  [Tunnel Setup](#orgf2eb6f8)
-
-
-
-<a id="orge319bec"></a>
-
-# Getting Started
-
-Make sure `libvirtd` service is up and running
-
-    sudo rc-service libvirtd start
-
-Start `minikube`
-
-    minikube start
-
-
-<a id="orgd624d66"></a>
-
-## Create Docker images
-
-[Use `minikube` docker daemon](#org36108f6)
-
-    eval $(minikube -p minikube docker-env)
-
-
-<a id="orgfa88653"></a>
-
-## Server
-
-From project root run
-
-    docker build -t githubissuemanager/website website/
-
-
-<a id="org8bf92b4"></a>
-
-## Website
-
-From project root run
-
-    docker build -t githubissuemanager/server app/
-
-
-<a id="org4571b11"></a>
-
-## Enable `ingress` addon for `minikube`
-
-    minikube addons enable ingress
-
-
-<a id="orgc782791"></a>
-
-## Setup
-
-
-<a id="org513ecb8"></a>
-
-### `gi-cli`
-
-Use `gi-cli` to bootstrap clusters
-
-    gi-cli cluster bootstrap -a apply -p <path-to-k8s>
-
-
-<a id="orgaf135a2"></a>
-
-### Manual Setup
-
-1.  Create `githubissuemanager` namespace
-
-        kubectl create namespace githubissuemanager
-
-2.  Initialize cluster
-
-        kubectl apply -R -f k8s/
-        networkpolicy.networking.k8s.io/client-side created
-        ingress.networking.k8s.io/githubissuemanager-ngnix-ingress created
-        persistentvolume/githubissuemanager-pv configured
-        persistentvolumeclaim/githubissuemanager-claim created
-        secret/githubissuemanager-secret created
-        configmap/init-database created
-        service/postgresdb created
-        statefulset.apps/postgresdb created
-        deployment.apps/server created
-        service/server created
-        networkpolicy.networking.k8s.io/server-side created
-        deployment.apps/website created
-        service/website created
-
-3.  Browse
-
-    Check `minikube service list` to see what ports are being used for deployment
-    
-        minikube service list
-        |--------------------+------------------------------------+--------------+-----------------------------|
-        | NAMESPACE          | NAME                               | TARGET PORT  | URL                         |
-        |--------------------+------------------------------------+--------------+-----------------------------|
-        | default            | kubernetes                         | No node port |                             |
-        | githubissuemanager | postgresdb                         | No node port |                             |
-        | githubissuemanager | server                             | No node port |                             |
-        | githubissuemanager | website                            | No node port |                             |
-        | ingress-nginx      | ingress-nginx-controller           | http/80      | http://192.168.39.196:30297 |
-        |                    |                                    | https/443    | http://192.168.39.196:31388 |
-        | ingress-nginx      | ingress-nginx-controller-admission | No node port |                             |
-        | kube-system        | kube-dns                           | No node port |                             |
-        |--------------------+------------------------------------+--------------+-----------------------------|
-    
-    From this example, open `http://192.168.39.196:30297` in browser.
-
-
-<a id="org27ce41a"></a>
-
-# Data persistence across restarts
-
-From [Minikube Handbook](https://minikube.sigs.k8s.io/docs/handbook/persistent_volumes/)
-
-> A note on mounts, persistence, and minikube hosts
-> 
-> minikube is configured to persist files stored under the following directories, which are made in the Minikube VM (or on your localhost if running on bare metal). You may lose data from other directories on reboots.
-> 
-> /data\*
-> /var/lib/minikube
-> /var/lib/docker
-> /var/lib/containerd
-> /var/lib/buildkit
-> /var/lib/containers
-> /tmp/hostpath<sub>pv</sub>\*
-> /tmp/hostpath-provisioner\*
-> 
-> \*mount point for another directory, stored under /var or on a separate data disk
-
-So all data will persist as long as `githubissuemanager-persistentvolume` isn&rsquo;t deleted.
-
-
-<a id="org36108f6"></a>
-
-# Reuse Docker daemon from Minikube
-
-Instead of Kubernetes pulling images as described by the `image` tag
-
-    image: githubissuemanager/server
-    name: server
-
-Kubernetes can use locally built image
-
-1.  Set the environment variables with `eval $(minikube docker-env)`
-2.  Build image with Minikube&rsquo;s Docker daemon `docker build -t my-image .`
-3.  Set the image in the pod spec
-4.  Set the `imagePullPolicy` to `Never`
-
-    image: githubissuemanager/server
-    imagePullPolicy: Never
-    name: server
-
-
-<a id="org0d391eb"></a>
-
-# Development
-
-
-<a id="org7d551c7"></a>
-
-## Minikube tunnel
-
-Using a custom Kubernetes Cluster (using minikube, kubeadm, etc) means there&rsquo;s no `LoadBalancer` integration (unlike AWS or Google Cloud).
-With this default setup, there&rsquo;s only `NodePort` or an `Ingress Controller`.
-
-But a `LoadBalancer` can be *emulated* by Minikube using `minikube tunnel` command.
-
-See [k8s handbook, uisng minikube](https://minikube.sigs.k8s.io/docs/handbook/accessing/#using-minikube-tunnel)
-
-
-<a id="orgf2eb6f8"></a>
-
-## Tunnel Setup
-
-Depending on minikube driver (usually docker), minikube can have different port forwarding. `kvm2` driver constructs images on host, which means no need to tunnel (different from minikube cmd `tunnel`).
-
-For native host
-
-1.  Delete existing image
-    
-        minikube delete
-
-2.  Change driver
-    
-        minikube config set vm-driver kvm2
-
-3.  Start again
-    
-        minikube start
-
-Now listing exposed services will be correctly mapped.
-
-minikube service list
-
-    |--------------------+------------+--------------+-----------------------------|
-    | NAMESPACE          | NAME       | TARGET PORT  | URL                         |
-    |--------------------+------------+--------------+-----------------------------|
-    | default            | kubernetes | No node port |                             |
-    | githubissuemanager | postgresdb | 5432/5432    | http://192.168.39.232:31524 |
-    | githubissuemanager | server     | 8080/8080    | http://192.168.39.232:31933 |
-    | githubissuemanager | website    | 3000/3000    | http://192.168.39.232:32231 |
-    | kube-system        | kube-dns   | No node port |                             |
-    |--------------------+------------+--------------+-----------------------------|
-
-
+# GitHub Issue Manager (GitCore)
+
+Manage GitHub issues across your repositories from one place: sign in with GitHub, pick the
+repositories you care about, filter/search/sort their issues, create and edit issues, assign
+people, manage labels, comment, close and reopen — and see dashboard statistics for the
+repositories you track. An optional **Discover** page lists beginner-friendly open issues
+("good first issue", "help wanted", …) collected from across GitHub.
+
+- [Architecture](#architecture)
+- [Technology stack](#technology-stack)
+- [Prerequisites](#prerequisites)
+- [Configuration](#configuration)
+- [GitHub OAuth setup](#github-oauth-setup)
+- [Local development](#local-development)
+- [Docker deployment](#docker-deployment)
+- [Kubernetes deployment](#kubernetes-deployment)
+- [Running tests](#running-tests)
+- [API reference](#api-reference)
+- [Troubleshooting](#troubleshooting)
+- [Known limitations](#known-limitations)
+
+## Architecture
+
+```
+ Browser ──► website (Next.js, :3000) ──────────────► API server (Rust/actix-web, :8080) ──► GitHub REST/GraphQL
+               │ next-auth: "Sign in with GitHub"         │ validates the user's token with GitHub
+               │ /api/backend/* proxy adds the            │ every GitHub call uses the user's own token
+               │ user's GitHub token server-side          │
+               └ token lives only in an encrypted,        └──► PostgreSQL (users, tracked repositories,
+                 HttpOnly session cookie                        synced issue snapshots, Discover issues)
+```
+
+- **GitHub is the source of truth.** Issue lists, details, comments and all edits go to GitHub
+  live with the signed-in user's token, so GitHub enforces repository permissions.
+- **PostgreSQL** stores per-user data: the user record, *tracked repositories*, and a snapshot of
+  their issues. The snapshot is refreshed by **Sync** and kept current by write-through after each
+  edit made in the app; it powers the dashboard. Every row is scoped to the user's GitHub id.
+- **Discover** (optional) is a background aggregator that uses a server-owned token
+  (`GITHUB_ACCESS_TOKEN`) and the GraphQL API to collect beginner-friendly issues into the
+  `issues` table, and periodically prunes closed ones.
+- **gi-cli** (`gi-cli/`) is an operator CLI that bootstraps the Kubernetes manifests and sends
+  Discover maintenance commands (`POST /api/v1/command`).
+
+Repository layout:
+
+| Path | Contents |
+|------|----------|
+| `app/middleware` | Rust library: GitHub REST client, Discover aggregator (GraphQL), persistence, SQL migrations |
+| `app/server` | Rust HTTP API (routes → services → middleware), integration tests |
+| `Frontend/issuemanager` | Next.js website (pages router), next-auth, API proxy, Jest tests |
+| `gi-cli` | Operator CLI (cluster bootstrap, Discover commands) |
+| `k8s/` | Kubernetes manifests (`kubectl apply -R -f k8s/`) |
+| `k8s-extras/` | Optional manifests (static hostPath volume for clusters without a provisioner) |
+| `docker-compose.yml` | Full stack for local/single-host deployment |
+| `docs/AUDIT.md` | Audit report of the fixes made to this repository |
+
+## Technology stack
+
+- **API:** Rust 2021, actix-web 4, sqlx 0.8 (PostgreSQL, rustls), reqwest 0.12, graphql_client, tracing (JSON logs)
+- **Website:** Next.js 16 (pages router), React 19, next-auth 4 (GitHub OAuth), Tailwind CSS 3, TypeScript
+- **Database:** PostgreSQL 16
+- **Tests:** cargo test + wiremock (fake GitHub), Jest + Testing Library
+- **Deployment:** Docker (multi-stage, non-root images), Docker Compose, Kubernetes
+
+## Prerequisites
+
+- Rust ≥ 1.80 (`rustup`), Node.js ≥ 20.9 (22 LTS recommended), PostgreSQL 16 (or Docker)
+- A GitHub OAuth App (see below)
+- For containers: Docker 24+ with Compose v2. For Kubernetes: a cluster with an ingress-nginx controller.
+
+## Configuration
+
+All variables are documented in [`.env.example`](.env.example). Copy it to `.env` (git-ignored)
+and fill in the values. Never commit real credentials.
+
+| Variable | Used by | Purpose |
+|----------|---------|---------|
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | db, API | Database credentials |
+| `DATABASE_URL` *or* `POSTGRES_HOST`/`POSTGRES_PORT` | API | Where the API finds Postgres |
+| `NEXTAUTH_URL` | website | Public URL of the website |
+| `NEXTAUTH_SECRET` | website | Session encryption key (`openssl rand -base64 32`) |
+| `GITHUB_ID`, `GITHUB_SECRET` | website | GitHub OAuth App credentials |
+| `BACKEND_URL` | website | Internal URL of the API (`http://server:8080` in Compose/K8s) |
+| `GITHUB_API_URL`, `GITHUB_WEB_URL` | both | Override for GitHub Enterprise Server |
+| `GITHUB_OAUTH_SCOPES` | website | Default `read:user user:email repo`; `public_repo` restricts to public repos |
+| `GITHUB_ACCESS_TOKEN` | API | Optional. Enables Discover (server-owned token, no scopes needed) |
+| `DISCOVER_SYNC_INTERVAL_SECS` | API | Discover schedule (default 3600; `0` disables the background job) |
+| `COMMANDER_ACCESS_TOKEN`, `ADMIN_ACCESS_TOKEN` | API | Optional operator tokens (≥ 16 chars) for `/api/v1/command` |
+| `ISSUE_SYNC_MAX_PAGES` | API | Max pages of 100 issues fetched per repository sync (default 10) |
+| `LOG_FORMAT` (`text`/`json`), `RUST_LOG` | API | Logging |
+
+## GitHub OAuth setup
+
+1. GitHub → **Settings → Developer settings → OAuth Apps → New OAuth App**.
+2. **Homepage URL:** your `NEXTAUTH_URL` (e.g. `http://localhost:3000`).
+3. **Authorization callback URL:** `<NEXTAUTH_URL>/api/auth/callback/github`
+   (e.g. `http://localhost:3000/api/auth/callback/github`).
+4. Copy the client id to `GITHUB_ID`, generate a client secret into `GITHUB_SECRET`.
+
+The app requests `read:user user:email repo` (needed to manage issues in private repositories).
+**Account → Disconnect GitHub account** deletes everything the app stored for you and revokes
+the app's OAuth grant on GitHub.
+
+## Local development
+
+```bash
+# 1. Database (any PostgreSQL 16 works; this uses the compose service, published on 127.0.0.1:5432)
+cp .env.example .env              # set POSTGRES_PASSWORD at least
+docker compose up -d postgresdb
+
+# 2. API server (applies migrations on startup)
+cd app
+export DATABASE_URL=postgres://githubissuemanager:<password>@localhost:5432/githubissuemanager
+export LOG_FORMAT=text
+cargo run -p server               # http://localhost:8080/api/v1/health/ready
+
+# 3. Website (in another terminal)
+cd Frontend/issuemanager
+cat > .env.local <<'EOF'
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=<openssl rand -base64 32>
+GITHUB_ID=<oauth client id>
+GITHUB_SECRET=<oauth client secret>
+BACKEND_URL=http://localhost:8080
+EOF
+npm install
+npm run dev                       # http://localhost:3000
+```
+
+`.env.local` is git-ignored. Database schema changes are additive sqlx migrations in
+`app/middleware/migrations/` (applied automatically at startup; never edit an applied migration).
+
+## Docker deployment
+
+```bash
+cp .env.example .env              # fill in POSTGRES_PASSWORD, NEXTAUTH_SECRET, GITHUB_ID, GITHUB_SECRET
+docker compose up --build -d
+docker compose ps                 # all services "healthy"
+open http://localhost:3000
+```
+
+- Images: `githubissuemanager/server` (from `app/`) and `githubissuemanager/website`
+  (from `Frontend/issuemanager/`). Both are multi-stage, run as non-root, and have health checks.
+  Build individually with `docker build -t githubissuemanager/server:latest app/` and
+  `docker build -t githubissuemanager/website:latest Frontend/issuemanager/`.
+- Data is stored in the `postgres-data` volume and survives `docker compose down` / restarts.
+  Only `docker compose down -v` deletes it.
+- The API (`127.0.0.1:8080`) and Postgres (`127.0.0.1:5432`) are published on localhost only.
+
+## Kubernetes deployment
+
+The manifests are portable (default StorageClass, `IfNotPresent` image pulls) and assume an
+ingress-nginx controller (`ingressClassName: nginx`).
+
+1. **Build and publish the images** to a registry your cluster can pull from, and update the
+   `image:` fields in `k8s/server/server-deployment.yaml` and `k8s/website/website-deployment.yaml`.
+   With **minikube** you can load local images instead:
+
+   ```bash
+   docker build -t githubissuemanager/server:latest app/
+   docker build -t githubissuemanager/website:latest Frontend/issuemanager/
+   minikube image load githubissuemanager/server:latest
+   minikube image load githubissuemanager/website:latest
+   minikube addons enable ingress
+   ```
+
+2. **Configure:** set `NEXTAUTH_URL` in `k8s/setting/githubissuemanager-configmap.yaml` to the
+   public URL users will open (and register `<NEXTAUTH_URL>/api/auth/callback/github` in the OAuth app).
+
+3. **Create the namespace and Secret** (fill in a copy of the template *outside* the repository):
+
+   ```bash
+   kubectl apply -f k8s/00-namespace.yaml
+   cp k8s/githubissuemanager-secret.env.example ~/githubissuemanager-secret.env   # edit it
+   kubectl -n githubissuemanager create secret generic githubissuemanager-secret \
+     --from-env-file="$HOME/githubissuemanager-secret.env"
+   ```
+
+4. **Deploy everything:**
+
+   ```bash
+   kubectl apply -R -f k8s/
+   kubectl -n githubissuemanager rollout status statefulset/postgresdb
+   kubectl -n githubissuemanager rollout status deployment/server
+   kubectl -n githubissuemanager rollout status deployment/website
+   ```
+
+   or with gi-cli: `cargo run --manifest-path gi-cli/Cargo.toml -- cluster bootstrap -a apply -p k8s`
+   (the Secret from step 3 must exist first).
+
+5. **Browse:** the ingress serves the website at `/` and the API at `/api/v1`. On minikube,
+   `minikube service -n ingress-nginx ingress-nginx-controller --url` prints the address
+   (or run `minikube tunnel`).
+
+**Persistence:** PostgreSQL stores its data on the `githubissuemanager-claim` PersistentVolumeClaim
+(default StorageClass), so it survives pod restarts and redeployments. Deleting the claim or the
+namespace deletes the data unless your StorageClass retains volumes. For clusters without a
+dynamic provisioner see [`k8s-extras/static-hostpath-volume`](k8s-extras/static-hostpath-volume/README.md).
+
+**Network policies** (`*-networkpolicy.yaml`) restrict Postgres to the API pods and the API to the
+website pods and the `ingress-nginx` namespace. They are only enforced by CNIs that support
+NetworkPolicy (e.g. `minikube start --cni=calico`).
+
+**Operator commands** (Discover): with `COMMANDER_ACCESS_TOKEN` set in the Secret and in your shell,
+`cargo run --manifest-path gi-cli/Cargo.toml -- control commander -c insert -l 100`.
+
+## Running tests
+
+```bash
+# Rust (fmt, lint, unit + HTTP + database tests). Database tests need a PostgreSQL server;
+# each test creates and drops its own schema inside DATABASE_URL's database.
+cd app
+export DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
+cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+cargo test --lib --test api        # the subset that needs no database
+
+# Website
+cd Frontend/issuemanager
+npm ci && npm run lint && npm run typecheck && npm test && npm run build
+
+# gi-cli
+cd gi-cli && cargo test
+```
+
+The database tests fail (rather than skip) when `DATABASE_URL` is not set. CI
+(`.github/workflows/ci.yml`) runs all of the above against a PostgreSQL service, builds both
+Docker images, validates `docker-compose.yml`, and validates the Kubernetes manifests with kubeconform.
+
+## API reference
+
+All endpoints are under `/api/v1` and (except health) require `Authorization: Bearer <GitHub OAuth token>`.
+The website calls them through `/api/backend/<path>`, which adds the token. Responses are
+`{"data": …, "meta": {page, per_page, has_next, total_count?}}`; errors are
+`{"error": {"code", "message", "details"?}}` with precise HTTP statuses (401, 403, 404, 409, 422,
+429 + `Retry-After` for GitHub rate limits, 502/504 when GitHub is unavailable).
+
+| Method & path | Purpose |
+|---------------|---------|
+| `GET /health/live`, `GET /health/ready` | Liveness; readiness (database reachable) |
+| `GET /me`, `DELETE /me` | Current user (records it); delete all stored data for the user |
+| `GET /repos?page&per_page` | Repositories the user can access (+ `tracked` flag) |
+| `GET /repos/{owner}/{repo}` | Repository details, permissions and tracking state |
+| `GET /repos/{owner}/{repo}/labels`, `/assignees` | Pickers |
+| `GET /repos/{owner}/{repo}/issues?state&labels&assignee&sort&direction&q&page&per_page` | List/search issues |
+| `POST /repos/{owner}/{repo}/issues` | Create (`title`, `body`, `labels`, `assignees`) |
+| `GET`/`PATCH /repos/{owner}/{repo}/issues/{n}` | Details; edit title/body, close/reopen (`state`, `state_reason`), set assignees/labels |
+| `GET`/`POST /repos/{owner}/{repo}/issues/{n}/comments` | List / add comments |
+| `POST /repos/{owner}/{repo}/issues/{n}/labels`, `DELETE …/labels?name=` | Add / remove labels |
+| `GET /tracked-repos`, `PUT`/`DELETE /tracked-repos/{owner}/{repo}` | Tracked repositories |
+| `POST /tracked-repos/{owner}/{repo}/sync` | Refresh the repository's issue snapshot |
+| `GET /dashboard` | Statistics over tracked repositories |
+| `GET /discover/issues?language&label&page&per_page`, `GET /discover/languages` | Discover |
+| `POST /command` | Operator: `{"action":"insert"\|"update","target":"issues","limit":N}` with an operator token |
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| Sign-in shows "Sign-in is not configured correctly" | Set `NEXTAUTH_SECRET`, `GITHUB_ID`, `GITHUB_SECRET`; restart the website |
+| GitHub says *redirect_uri is not associated* | The OAuth app callback must be exactly `<NEXTAUTH_URL>/api/auth/callback/github` |
+| Pages show "The API server is unavailable" | Check `BACKEND_URL` and the API logs; `curl <api>/api/v1/health/ready` |
+| API exits with `configuration error` | A required variable is missing/invalid; the message names it |
+| API logs `database not reachable yet; retrying` | Postgres is still starting or the host/credentials are wrong (it retries for ~60 s) |
+| "GitHub API rate limit exceeded" | Wait for the time shown; the dashboard reads the local snapshot and keeps working |
+| Dashboard numbers look stale | Press **Sync** on the repository; stats come from the last sync plus edits made in the app |
+| Postgres pod fails after changing the image | A data directory cannot be opened by a different PostgreSQL major version; keep `postgres:16` or dump/restore |
+| Mutations return 403 "Cross-origin request rejected" | `NEXTAUTH_URL` must match the URL in the browser's address bar |
+
+## Known limitations
+
+- The dashboard reflects the last **Sync** plus edits made through the app; changes made directly
+  on GitHub appear after the next sync. Syncs fetch at most `ISSUE_SYNC_MAX_PAGES` × 100 issues
+  (the most recently updated ones) and say so when truncated.
+- GitHub search returns at most 1,000 results; label/assignee pickers show the first 100 entries.
+- Issue bodies and comments are shown as plain text (Markdown is not rendered), which also rules
+  out HTML injection.
+- Pull requests are intentionally excluded everywhere.
+- The Discover background job runs in every API replica; keep one replica while it is enabled.
+- Sign-in is GitHub-only (previous Google/LinkedIn/email buttons never worked and could not grant
+  access to GitHub issues).

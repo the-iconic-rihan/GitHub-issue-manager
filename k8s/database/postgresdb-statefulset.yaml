@@ -1,4 +1,5 @@
 ---
+# Schema migrations are applied by the API server on startup (sqlx), so no init script is needed.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -15,14 +16,20 @@ spec:
     type: RollingUpdate
   template:
     metadata:
-      creationTimestamp: null
       labels:
         app: postgresdb
         service: postgresdb
     spec:
       terminationGracePeriodSeconds: 30
+      securityContext:
+        # `postgres` user in the alpine image; makes the volume writable for it.
+        fsGroup: 70
       containers:
-        - env:
+        - name: postgresdb
+          # Pinned major version: a data directory cannot be opened by a different major version.
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          env:
             - name: POSTGRES_DB
               valueFrom:
                 secretKeyRef:
@@ -38,24 +45,39 @@ spec:
                 secretKeyRef:
                   name: githubissuemanager-secret
                   key: POSTGRES_PASSWORD
-          image: postgres:alpine
-          name: postgresdb
+            # Sub-directory: volume roots may contain lost+found, which initdb rejects.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           ports:
-            - containerPort: 5432
-          resources: {}
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1']
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1']
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
           volumeMounts:
-            - mountPath: /docker-entrypoint-initdb.d/init-database.sh
-              name: init-database-script
-              subPath: init-database.sh
             - mountPath: /var/lib/postgresql/data
               name: githubissuemanager-claim
       restartPolicy: Always
       volumes:
-        - name: init-database-script
-          configMap:
-            name: init-database
-            defaultMode: 0777
         - name: githubissuemanager-claim
           persistentVolumeClaim:
             claimName: githubissuemanager-claim
-

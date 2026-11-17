@@ -1,18 +1,25 @@
 [package]
 name = "server"
 version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+edition.workspace = true
+rust-version.workspace = true
+description = "HTTP API for GitHub Issue Manager"
 
 [dependencies]
-actix-web = "4.0.1"
-serde = { version = "1.0.137", features = ["derive"] }
-log = "0.4.17"
-env_logger = "0.9.0"
-chrono = "0.4.19"
-tokio = { version = "1", features = ["full"] }
-derive_more = "0.99.17"
-actix-web-grants = "3.0.1"
-actix-web-httpauth = "0.6.0"
+actix-web = { version = "4", default-features = false, features = ["macros", "compress-gzip"] }
+chrono.workspace = true
+log.workspace = true
 middleware = { path = "../middleware" }
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[dev-dependencies]
+actix-http = "3"
+wiremock.workspace = true

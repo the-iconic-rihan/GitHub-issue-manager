@@ -1,0 +1,113 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: website
+    service: website
+  name: website
+  namespace: githubissuemanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: website
+      service: website
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: website
+        service: website
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+      containers:
+        - name: website
+          # Build with `docker build -t githubissuemanager/website:latest Frontend/issuemanager/`.
+          image: githubissuemanager/website:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NEXTAUTH_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: githubissuemanager-config
+                  key: NEXTAUTH_URL
+            - name: BACKEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: githubissuemanager-config
+                  key: BACKEND_URL
+            - name: GITHUB_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: githubissuemanager-config
+                  key: GITHUB_API_URL
+            - name: GITHUB_WEB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: githubissuemanager-config
+                  key: GITHUB_WEB_URL
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: NEXTAUTH_SECRET
+            - name: GITHUB_ID
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: GITHUB_ID
+            - name: GITHUB_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: githubissuemanager-secret
+                  key: GITHUB_SECRET
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            - name: PORT
+              value: "3000"
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: next-cache
+              mountPath: /app/.next/cache
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: next-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+      restartPolicy: Always
