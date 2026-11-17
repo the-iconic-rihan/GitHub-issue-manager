@@ -133,6 +133,13 @@ jobs:
       - name: Build website image
         run: docker build -t githubissuemanager/website:ci Frontend/issuemanager/
       - name: Validate docker-compose.yml
+        # .env.example deliberately leaves the OAuth credentials empty, and the compose file
+        # requires them (`${GITHUB_ID:?...}`) so a real deployment cannot start without them.
+        # Shell variables take precedence over --env-file, so placeholders let the structure be
+        # validated while keeping that guard.
+        env:
+          GITHUB_ID: ci-placeholder
+          GITHUB_SECRET: ci-placeholder
         run: docker compose --env-file .env.example config --quiet
 
   kubernetes:
