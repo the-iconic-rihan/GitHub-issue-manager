@@ -1,0 +1,72 @@
+# Full stack: PostgreSQL + API server + website.
+#   cp .env.example .env   # then fill in the values
+#   docker compose up --build
+# Open http://localhost:3000. Data persists in the `postgres-data` volume
+# (`docker compose down` keeps it; only `docker compose down -v` deletes it).
+
+name: githubissuemanager
+
+services:
+  postgresdb:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-githubissuemanager}
+      POSTGRES_USER: ${POSTGRES_USER:-githubissuemanager}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Published on localhost only, for local development and `cargo test`.
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  server:
+    build: ./app
+    image: githubissuemanager/server:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgresdb
+      POSTGRES_DB: ${POSTGRES_DB:-githubissuemanager}
+      POSTGRES_USER: ${POSTGRES_USER:-githubissuemanager}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
+      GRAPHQL_URL: ${GRAPHQL_URL:-https://api.github.com/graphql}
+      GITHUB_ACCESS_TOKEN: ${GITHUB_ACCESS_TOKEN:-}
+      DISCOVER_SYNC_INTERVAL_SECS: ${DISCOVER_SYNC_INTERVAL_SECS:-3600}
+      COMMANDER_ACCESS_TOKEN: ${COMMANDER_ACCESS_TOKEN:-}
+      ADMIN_ACCESS_TOKEN: ${ADMIN_ACCESS_TOKEN:-}
+      ISSUE_SYNC_MAX_PAGES: ${ISSUE_SYNC_MAX_PAGES:-10}
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    depends_on:
+      postgresdb:
+        condition: service_healthy
+    # Published on localhost only (gi-cli / debugging). The browser never calls it directly.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  website:
+    build: ./Frontend/issuemanager
+    image: githubissuemanager/website:latest
+    restart: unless-stopped
+    environment:
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env}
+      GITHUB_ID: ${GITHUB_ID:?set GITHUB_ID in .env}
+      GITHUB_SECRET: ${GITHUB_SECRET:?set GITHUB_SECRET in .env}
+      GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
+      GITHUB_WEB_URL: ${GITHUB_WEB_URL:-https://github.com}
+      BACKEND_URL: http://server:8080
+    depends_on:
+      server:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres-data:

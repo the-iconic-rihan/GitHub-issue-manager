@@ -1,0 +1,22 @@
+---
+# Only the API server may connect to PostgreSQL. (Enforced only if the cluster's CNI
+# supports NetworkPolicy, e.g. Calico/Cilium; `minikube start --cni=calico`.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgresdb
+  namespace: githubissuemanager
+spec:
+  podSelector:
+    matchLabels:
+      app: postgresdb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: server
+      ports:
+        - protocol: TCP
+          port: 5432

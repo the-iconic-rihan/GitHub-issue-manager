@@ -1,0 +1,17 @@
+---
+# PostgreSQL data. Uses the cluster's default StorageClass (dynamic provisioning works on
+# minikube, kind, and managed clouds). For clusters without a provisioner, see
+# k8s-extras/static-hostpath-volume/ and set `storageClassName: local-storage` here.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    service: githubissuemanager-claim
+  name: githubissuemanager-claim
+  namespace: githubissuemanager
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

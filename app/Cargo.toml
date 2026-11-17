@@ -1,6 +1,26 @@
 [workspace]
+resolver = "2"
 
 members = [
     "middleware",
     "server",
 ]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.80"
+
+[workspace.dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+log = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "macros", "migrate"] }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "signal"] }
+url = "2"
+wiremock = "0.6"
+
+[profile.release]
+strip = true

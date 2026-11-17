@@ -1,0 +1,53 @@
+query IssueEasy($first: Int!, $after: String) {
+  rateLimit {
+    __typename
+    limit
+    cost
+    remaining
+    resetAt
+  }
+  search(
+    first: $first
+    after: $after
+    type: ISSUE
+    query: "label:\"good-first-issue\",\"good first issue\",\"Help Wanted\",\"Up for grabs\" state:open is:issue sort:created-desc"
+  ) {
+    __typename
+    pageInfo {
+      __typename
+      startCursor
+      hasNextPage
+      endCursor
+    }
+    edges {
+      __typename
+      node {
+        __typename
+        ... on Issue {
+          __typename
+          id
+          title
+          createdAt
+          url
+          labels(first: 10) {
+            __typename
+            nodes {
+              __typename
+              name
+            }
+          }
+          repository {
+            __typename
+            nameWithOwner
+            forkCount
+            stargazerCount
+            primaryLanguage {
+              __typename
+              name
+            }
+          }
+        }
+      }
+    }
+  }
+}
