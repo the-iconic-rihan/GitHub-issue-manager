@@ -73,7 +73,18 @@ impl ApiError {
         ApiError::Validation(vec![FieldError::new(field, message)])
     }
 
-    fn code(&self) -> &'static str {
+    /// Message safe to show clients: internal details are logged, never returned.
+    pub fn public_message(&self) -> String {
+        match self {
+            ApiError::Internal(detail) => {
+                tracing::error!(error = %detail, "internal error");
+                "An unexpected error occurred.".to_owned()
+            }
+            other => other.to_string(),
+        }
+    }
+
+    pub fn code(&self) -> &'static str {
         match self {
             ApiError::BadRequest(_) => "bad_request",
             ApiError::Validation(_) => "validation_failed",
@@ -112,18 +123,10 @@ impl ResponseError for ApiError {
 
     fn error_response(&self) -> HttpResponse {
         let status = self.status_code();
-        let message = match self {
-            ApiError::Internal(detail) => {
-                tracing::error!(error = %detail, "internal error");
-                "An unexpected error occurred.".to_owned()
-            }
-            other => {
-                if status.is_server_error() {
-                    tracing::warn!(error = %other, status = status.as_u16(), "upstream error");
-                }
-                other.to_string()
-            }
-        };
+        if status.is_server_error() && !matches!(self, ApiError::Internal(_)) {
+            tracing::warn!(error = %self, status = status.as_u16(), "upstream error");
+        }
+        let message = self.public_message();
         let details = match self {
             ApiError::Validation(fields) => Some(fields.as_slice()),
             _ => None,

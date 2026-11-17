@@ -58,6 +58,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
                 web::delete().to(issues::remove_label),
             )
             .route("/tracked-repos", web::get().to(repos::tracked))
+            .route("/tracked-repos/sync-stale", web::post().to(repos::sync_stale))
             .route("/tracked-repos/{owner}/{repo}", web::put().to(repos::track))
             .route("/tracked-repos/{owner}/{repo}", web::delete().to(repos::untrack))
             .route("/tracked-repos/{owner}/{repo}/sync", web::post().to(repos::sync))

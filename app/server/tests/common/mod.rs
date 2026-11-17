@@ -101,6 +101,7 @@ pub fn app_state(pool: PgPool, github: &MockServer) -> AppState {
         github: GitHubClient::new(&github.uri(), Duration::from_secs(5)).unwrap(),
         auth_cache: AuthCache::new(Duration::from_secs(60)),
         sync_max_pages: 3,
+        auto_sync: server::state::AutoSync::default(),
         discover: None,
         commander_token: None,
         admin_token: None,

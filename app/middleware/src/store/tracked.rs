@@ -94,19 +94,53 @@ pub async fn untrack(pool: &PgPool, user_id: i64, repo_id: i64) -> sqlx::Result<
         .map(|r| r.rows_affected() > 0)
 }
 
+/// Records a successful sync. `etag` is the first-page ETag of a *complete* snapshot
+/// (`None` disables conditional requests for the next sync).
 pub async fn mark_synced<'e>(
     db: impl PgExecutor<'e>,
     user_id: i64,
     repo_id: i64,
     full_name: &str,
+    etag: Option<&str>,
 ) -> sqlx::Result<Option<TrackedRepository>> {
     sqlx::query_as(&format!(
-        "UPDATE tracked_repositories SET last_synced_at = now(), full_name = $3 \
+        "UPDATE tracked_repositories SET last_synced_at = now(), full_name = $3, issues_etag = $4 \
          WHERE user_id = $1 AND repo_id = $2 RETURNING {COLUMNS}"
     ))
     .bind(user_id)
     .bind(repo_id)
     .bind(full_name)
+    .bind(etag)
     .fetch_optional(db)
+    .await
+}
+
+/// ETag stored by the last complete sync, if any.
+pub async fn issues_etag(pool: &PgPool, user_id: i64, repo_id: i64) -> sqlx::Result<Option<String>> {
+    sqlx::query_scalar("SELECT issues_etag FROM tracked_repositories WHERE user_id = $1 AND repo_id = $2")
+        .bind(user_id)
+        .bind(repo_id)
+        .fetch_optional(pool)
+        .await
+        .map(Option::flatten)
+}
+
+/// Tracked repositories never synced or last synced more than `older_than_secs` ago,
+/// least recently synced first.
+pub async fn stale(
+    pool: &PgPool,
+    user_id: i64,
+    older_than_secs: i64,
+    limit: i64,
+) -> sqlx::Result<Vec<TrackedRepository>> {
+    sqlx::query_as(&format!(
+        "SELECT {COLUMNS} FROM tracked_repositories \
+         WHERE user_id = $1 AND (last_synced_at IS NULL OR last_synced_at < now() - make_interval(secs => $2)) \
+         ORDER BY last_synced_at ASC NULLS FIRST, repo_id ASC LIMIT $3"
+    ))
+    .bind(user_id)
+    .bind(older_than_secs as f64)
+    .bind(limit)
+    .fetch_all(pool)
     .await
 }

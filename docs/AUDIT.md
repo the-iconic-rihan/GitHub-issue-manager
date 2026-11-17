@@ -60,6 +60,15 @@ missing API server, website features and deployment assets were built on the exi
 | L-03 | `gi-cli` | Compiler dead-code warnings, unused function | Fixed; remaining clippy *style* lints in original gi-cli code left unchanged (**Open**, cosmetic) |
 | L-04 | Tests / CI | No tests and no CI | 63 Rust tests, 34 Jest tests, gi-cli test, GitHub Actions workflow |
 
+## Follow-up hardening (production readiness)
+
+| ID | Area | Problem | Fix | Status |
+|----|------|---------|-----|--------|
+| F-01 | Auth (`server/src/auth.rs`) | Concurrent requests on a cold cache each called `GET /user` (a page load fires several) | Single-flight validation: concurrent callers share one GitHub request; only successes cached | Fixed |
+| F-02 | Auth (`server/src/lib.rs`) | A token revoked on GitHub stayed trusted from cache for up to the TTL | Any 401 response drops that token's cache entry immediately | Fixed |
+| F-03 | Sync | Dashboard went stale until the user pressed Sync; every sync re-downloaded everything | Automatic sync of stale repositories (`POST /tracked-repos/sync-stale`) driven by the open dashboard, using conditional requests (ETag/304, no rate-limit cost); additive migration `20261118000000` | Fixed |
+| F-04 | Testing | The full-stack E2E harness lived outside the repository | `e2e/` suite (fake GitHub, workflow checks, headless browser) with `e2e/run.sh`, run in CI with artifacts | Fixed |
+
 ## Security controls added
 
 - GitHub token stored only in the encrypted HttpOnly session cookie; never sent to the browser (verified E2E).
@@ -74,14 +83,16 @@ missing API server, website features and deployment assets were built on the exi
 | Area | Result |
 |------|--------|
 | Rust: fmt, clippy `-D warnings` | clean |
-| Rust: 22 middleware unit, 4 Discover DB, 15 server unit, 13 HTTP API, 9 HTTP+DB tests | 63/63 passed (PostgreSQL 16) |
+| Rust: 23 middleware unit, 4 Discover DB, 16 server unit, 15 HTTP API, 11 HTTP+DB tests | 69/69 passed (PostgreSQL 16) |
 | Website: ESLint, `tsc`, production build, `npm audit` | clean, 0 vulnerabilities |
-| Website: Jest | 34/34 passed |
+| Website: Jest | 39/39 passed |
 | gi-cli test | 1/1 passed |
-| Full stack E2E (real website + API + PostgreSQL, fake GitHub) | 21/21 checks: OAuth sign-in, repositories, track/sync, filters/search/sort/pagination, details, create, edit, assign, labels, comments, close/reopen, dashboard, restart persistence, disconnect |
-| Headless Firefox UI run | 8/8 flows; 0 console errors/warnings, 0 uncaught JS errors; no horizontal overflow at 390 px |
+| Full stack E2E (`e2e/run.sh`: real website + API + PostgreSQL, fake GitHub) | 22/22 checks: OAuth sign-in, repositories, track/sync, filters/search/sort/pagination, details, create, edit, assign, labels, comments, close/reopen, dashboard, restart persistence, automatic sync, disconnect |
+| Headless Firefox UI run (part of `e2e/run.sh`) | 8/8 flows; 0 console errors/warnings, 0 uncaught JS errors; no horizontal overflow at 390 px |
+| Real github.com | Sign-in, profile, dashboard and repository listing verified with a real OAuth app |
 | Kubernetes YAML | parsed and structurally checked locally; schema validation (kubeconform) runs in CI only |
 
 **Not verified locally:** building the Docker images and running Compose/Kubernetes (no Docker or
-cluster on the audit machine; CI builds the images and validates the manifests), and sign-in
-against real github.com (no OAuth credentials; a protocol-faithful fake GitHub was used).
+cluster on the audit machine; CI builds the images and validates the manifests). Against real
+github.com only sign-in and read paths were exercised; write workflows were verified with the
+fake GitHub.

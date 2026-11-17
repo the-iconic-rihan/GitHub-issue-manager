@@ -102,6 +102,7 @@ pub async fn sync(
     full_name: &str,
     issues: &[Issue],
     complete: bool,
+    etag: Option<&str>,
 ) -> sqlx::Result<Option<TrackedRepository>> {
     let mut tx = pool.begin().await?;
 
@@ -130,7 +131,9 @@ pub async fn sync(
             .await?;
     }
 
-    let tracked = tracked::mark_synced(&mut *tx, user_id, repo_id, full_name).await?;
+    // Only a complete snapshot may be used as the base for conditional syncs.
+    let etag = if complete { etag } else { None };
+    let tracked = tracked::mark_synced(&mut *tx, user_id, repo_id, full_name, etag).await?;
     tx.commit().await?;
     Ok(tracked)
 }

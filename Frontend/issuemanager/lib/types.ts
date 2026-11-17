@@ -107,7 +107,15 @@ export interface SyncResult {
   repository: TrackedRepository;
   issues_fetched: number;
   truncated: boolean;
+  not_modified: boolean;
   synced_at: string;
+}
+
+export interface StaleSyncReport {
+  updated: string[];
+  unchanged: string[];
+  failed: { full_name: string; code: string; message: string }[];
+  more_pending: boolean;
 }
 
 export interface RepoStats {

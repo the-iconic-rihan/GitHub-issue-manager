@@ -429,3 +429,91 @@ async fn commands_require_configuration_and_token() {
     let (status, _, _) = send(&app, authed(req, "commander-secret-token")).await;
     assert_eq!(status, 422);
 }
+
+#[actix_web::test]
+async fn concurrent_requests_validate_the_token_once() {
+    let gh = fake_github().await;
+    Mock::given(method("GET"))
+        .and(path("/user"))
+        .and(wiremock::matchers::header(
+            "authorization",
+            "Bearer gho_slow_token_value",
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(user_json(99, "slow"))
+                .set_delay(std::time::Duration::from_millis(300)),
+        )
+        .with_priority(1)
+        .mount(&gh)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/app/issues"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .mount(&gh)
+        .await;
+    let app = init(state(unreachable_pool(), &gh)).await;
+
+    let (a, b, c) = tokio::join!(
+        send(&app, get("/api/v1/repos/acme/app/issues", "gho_slow_token_value")),
+        send(&app, get("/api/v1/repos/acme/app/issues", "gho_slow_token_value")),
+        send(&app, get("/api/v1/repos/acme/app/issues", "gho_slow_token_value")),
+    );
+    assert_eq!((a.0, b.0, c.0), (200, 200, 200));
+    let user_calls = gh
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == "/user")
+        .count();
+    assert_eq!(user_calls, 1, "concurrent requests must share one token validation");
+}
+
+#[actix_web::test]
+async fn a_token_rejected_by_github_is_not_trusted_from_cache() {
+    let gh = fake_github().await;
+    let revoked = "gho_soon_revoked_token";
+    // Valid for the first validation only, rejected afterwards.
+    Mock::given(method("GET"))
+        .and(path("/user"))
+        .and(wiremock::matchers::header(
+            "authorization",
+            format!("Bearer {revoked}").as_str(),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(user_json(5, "revokee")))
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&gh)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/app/issues"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .mount(&gh)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/app/issues/1"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(json!({"message": "Bad credentials"})))
+        .mount(&gh)
+        .await;
+    let app = init(state(unreachable_pool(), &gh)).await;
+
+    assert_eq!(send(&app, get("/api/v1/repos/acme/app/issues", revoked)).await.0, 200);
+    // GitHub rejects the token mid-session.
+    assert_eq!(send(&app, get("/api/v1/repos/acme/app/issues/1", revoked)).await.0, 401);
+    // Without invalidation this would be served from the cache (200); now it re-validates.
+    assert_eq!(send(&app, get("/api/v1/repos/acme/app/issues", revoked)).await.0, 401);
+    let user_calls = gh
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| {
+            r.url.path() == "/user"
+                && r.headers
+                    .get("authorization")
+                    .is_some_and(|v| v.to_str().unwrap().ends_with(revoked))
+        })
+        .count();
+    assert_eq!(user_calls, 2);
+}

@@ -2,7 +2,7 @@ use reqwest::header::HeaderMap;
 use serde::Deserialize;
 
 /// A failed GitHub REST call, classified so the HTTP layer can map it to a precise status.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum GitHubError {
     #[error("GitHub rejected the access token")]
     Unauthorized,
